@@ -1,4 +1,5 @@
 import os
+import time
 import smtplib
 import pandas as pd
 from colorama import Fore
@@ -12,11 +13,16 @@ from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
 
 
-load_dotenv()
-email_password = os.getenv('email_password')
-email_user = os.getenv('email_user')
-
 class Scrappy:
+    
+    load_dotenv()
+    email_password = os.getenv('email_password')
+    email_user = os.getenv('email_user')
+    page = 0
+    titles = []
+    links = []
+    regular_prices = []
+    sale_prices = []
 
     def start(self):
         self.data_scraping()
@@ -27,33 +33,46 @@ class Scrappy:
         url = 'https://www.kabum.com.br/computadores/monitores?page_number=1&page_size=20&facet_filters=eyJoYXNfb2ZmZXIiOlsidHJ1ZSJdfQ==&sort=price'
         service = Service(ChromeDriverManager().install())
         options = Options()
-        options.add_argument('--headless')
+        # options.add_argument('--headless')
 
         driver = webdriver.Chrome(service=service, options=options)
         driver.get(url)
 
         return driver
 
-    def convert_selenium_type_to_text(self, list, ):
-        list_text = [item.text for item in list]
-        return list_text
-
     def data_scraping(self):
         driver = self.configure_and_open_web_page()
-
+        
         print(Fore.LIGHTGREEN_EX, "Scraping Data... \n")
+        
+        next_button = driver.find_element('xpath', '//ul/li/a[@class="nextLink"]')
+        next_button_text = next_button.get_attribute('aria-disabled')
+        
+        while (next_button_text == 'false'):
+            time.sleep(1)
+            self.page += 1
+            print(f'Now we are in page number {self.page}')
+            
+            next_button = driver.find_element('xpath', '//ul/li/a[@class="nextLink"]')
+            next_button_text = next_button.get_attribute('aria-disabled')
 
-        titles = driver.find_elements('xpath', '//main/div/a/div/button/div/h2/span')
-        links = driver.find_elements('xpath', '//main/div/a')
-        regular_prices = driver.find_elements('xpath', '//main/div/a/div/div/span[1]')
-        sale_prices = driver.find_elements('xpath', '//main/div/a/div/div/span[2]')
-
-        titles_text = self.convert_selenium_type_to_text(titles)
-        links_text = [item.get_attribute('href') for item in links]
-        regular_prices_text = self.convert_selenium_type_to_text(regular_prices)
-        sale_prices_text = self.convert_selenium_type_to_text(sale_prices)
-
-        self.write_csv_file(titles_text, regular_prices_text, sale_prices_text, links_text)
+            titles = driver.find_elements('xpath', '//main/div/a/div/button/div/h2/span')
+            links = driver.find_elements('xpath', '//main/div/a')
+            regular_prices = driver.find_elements('xpath', '//main/div/a/div/div/span[1]')
+            sale_prices = driver.find_elements('xpath', '//main/div/a/div/div/span[2]')
+            
+            for (title, link, regular_price, sale_price) in zip(titles, links, regular_prices, sale_prices):
+                self.titles.append(title.text)
+                self.links.append(link.get_attribute('href'))
+                self.regular_prices.append(regular_price.text)
+                self.sale_prices.append(sale_price.text)
+            
+            if(next_button_text == 'true'): break
+            
+            next_button.click()
+            
+        driver.quit()
+        self.write_csv_file(self.titles, self.regular_prices, self.sale_prices, self.links)
         self.send_mail()
 
     def write_csv_file(self, titles, regular_prices, sale_prices, link):
@@ -77,8 +96,8 @@ class Scrappy:
                   "on the kabum website, attached are the promotions with the best prices"
 
         # setup the parameters of the message
-        password = email_password
-        msg['From'] = email_user
+        password = self.email_password
+        msg['From'] = self.email_user
         msg['To'] = input('Who would you like to send this email to? ')
         msg['Subject'] = "Hey bro, look at all the monitors with promotion on the kabum website"
         msg.attach(MIMEText(message, 'plain'))
